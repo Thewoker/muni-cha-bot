@@ -1,0 +1,92 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Pipeline completo de un reclamo/petición ciudadana:
+// PENDIENTE -> EN_REVISION -> EN_PROCESO -> RESUELTO (esperando que el
+// ciudadano confirme por WhatsApp) -> FINALIZADO
+// Si el ciudadano dice que NO se solucionó, RESUELTO -> REABIERTO -> vuelve
+// a EN_PROCESO.
+enum CaseStatus {
+  PENDIENTE
+  EN_REVISION
+  EN_PROCESO
+  RESUELTO
+  FINALIZADO
+  REABIERTO
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+}
+
+model FaqEntry {
+  id        String   @id @default(cuid())
+  question  String
+  answer    String
+  category  String
+  keywords  String[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([category])
+}
+
+model Case {
+  id             String          @id @default(cuid())
+  citizenName    String
+  citizenContact String
+  description    String
+  status         CaseStatus      @default(PENDIENTE)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  statusHistory  CaseStatusLog[]
+  conversationId String?
+  conversation   Conversation?   @relation(fields: [conversationId], references: [id])
+
+  @@index([status])
+  @@index([citizenContact])
+}
+
+model CaseStatusLog {
+  id         String      @id @default(cuid())
+  caseId     String
+  case       Case        @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  fromStatus CaseStatus?
+  toStatus   CaseStatus
+  changedAt  DateTime    @default(now())
+  note       String?
+
+  @@index([caseId])
+}
+
+model Conversation {
+  id             String    @id @default(cuid())
+  citizenContact String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  messages       Message[]
+  cases          Case[]
+
+  @@index([citizenContact])
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           MessageRole
+  content        String
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId, createdAt])
+}
