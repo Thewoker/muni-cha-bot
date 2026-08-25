@@ -44,13 +44,15 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 
 **No usar hosting serverless (Netlify, Vercel, Cloudflare Pages/Workers).** El conector de WhatsApp (`lib/whatsapp/baileys-client.ts`) mantiene un WebSocket abierto de forma indefinida y guarda la sesión en disco local (`./whatsapp-auth/`) — ambas cosas requieren un **proceso Node.js persistente** con **disco persistente**, algo que el modelo serverless no ofrece (cada función se crea y se destruye por request). Sin eso, la conexión de WhatsApp se cortaría constantemente y habría que re-escanear el QR todo el tiempo.
 
-Usar en cambio un hosting de "servicio persistente": **Railway**, **Render** (como Web Service, no como Static Site) o **Fly.io**. Los tres detectan Next.js automáticamente (Nixpacks/buildpacks) y corren `npm run build` + `npm start` en un contenedor que queda vivo. Pasos (ejemplo con Railway, los otros son análogos):
+Usar en cambio un hosting de "servicio persistente": **Railway**, **Render** (plan pago, como Web Service) o **Fly.io**. El free tier de Render en particular NO sirve para este proyecto: se duerme por inactividad (mata el WebSocket de WhatsApp) y no ofrece disco persistente (se pierde la sesión en cada redeploy).
 
-1. Creá el servicio apuntando a este repo.
-2. Agregá un servicio de **PostgreSQL administrado** (Railway/Render lo ofrecen con un click) y copiá su `DATABASE_URL` a las variables de entorno del servicio web.
-3. Cargá el resto de las variables: `ANTHROPIC_API_KEY`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_SESSION_SECRET`.
-4. Montá un **volumen persistente** en `/app/whatsapp-auth` (Railway: "Volumes"; Render: "Disks"). Sin esto, cada redeploy borra la sesión de WhatsApp y hay que volver a escanear el QR.
-5. Build command: `npm run build` (o dejalo automático). Start command: `npm start` — ya corre `prisma migrate deploy` antes de levantar el server (ver `package.json`), así que las migraciones se aplican solas en cada deploy.
-6. Deployeá, entrá a `/admin/config` y escaneá el QR una sola vez — con el volumen persistente, sobrevive a los redeploys.
+### Deploy en Railway
 
-Con esto, el resto de la app (chat web, panel admin, Prisma/Postgres, notificaciones por email) funciona exactamente igual que en local — no depende de nada serverless-incompatible.
+1. [railway.app](https://railway.app) → **New Project** → **Deploy from GitHub repo** → elegí `Thewoker/muni-cha-bot`. Railway detecta Next.js automáticamente (Nixpacks) y corre `npm run build` + `npm start`.
+2. En el mismo proyecto: **New** → **Database** → **PostgreSQL**. Railway crea el servicio y expone `DATABASE_URL` como variable — en el servicio web, referenciala como `${{Postgres.DATABASE_URL}}` (o copiá el valor a mano) en vez de escribir una fija.
+3. En el servicio web, pestaña **Variables**, cargá: `DATABASE_URL` (del paso 2), `ANTHROPIC_API_KEY`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_SESSION_SECRET`.
+4. Pestaña **Settings** → **Volumes** → **Add volume**, mount path `/app/whatsapp-auth`. Sin esto, cada redeploy borra la sesión de WhatsApp y hay que volver a escanear el QR.
+5. Start command ya viene resuelto por `package.json` (`prisma migrate deploy && next start`) — las migraciones se aplican solas en cada deploy, no hace falta correrlas a mano.
+6. Deployeá, esperá a que el servicio quede "Active", entrá a `https://<tu-dominio-railway>/admin/config` y escaneá el QR una sola vez — con el volumen persistente, sobrevive a los redeploys.
+
+Con esto, el resto de la app (chat web, panel admin, Prisma/Postgres, notificaciones por email) funciona exactamente igual que en local.
